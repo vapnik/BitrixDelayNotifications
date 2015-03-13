@@ -7,73 +7,80 @@ use Bitrix\Main\UserTable;
 
 class Main
 {
-	public static function CheckGoodsForOrders($arBasket)
+	public static function CheckGoodsForOrders($arBasket) //Метод очищающий список ненужных элементов корзины
 	{
-		$result = FALSE;
+		$result = FALSE; //инициализируем выходные данные
 		if ($arBasket)
 		{
-//			d($arBasket);
 			$arBoughtItems = [];
-			foreach ($arBasket as $arItem)
+			foreach ($arBasket as $arItem) // Получаем список ненужных элементов
 			{
 				if ($arItem['ORDER_ID'] > 0)
 				{
 					$arBoughtItems[] = $arItem['PRODUCT_ID'];
 				}
 			}
-//			d($arBoughtItems);
-			foreach ($arBasket as $key => $arItem)
+			foreach ($arBasket as $key => $arItem) // Очищаем ненужные элементы
 			{
 				if (in_array($arItem['PRODUCT_ID'], $arBoughtItems)
 					|| ($arItem['ORDER_ID'] > 0)
-					|| ($arItem['DELAY'] != 'Y')
+					|| ($arItem['DELAY'] != 'Y')//
 				)
 				{
 					unset($arBasket[$key]);
 				}
 			}
-			$result = $arBasket;
+			$result = $arBasket; //Заполняем выходную переменную
 		}
 
 		return $result;
 
 	}
 
-	public static function SendNotifications()
+	public static function SendNotifications() // Основной метод
 	{
 		\CModule::IncludeModule('sale');
 		$arBasketItems = [];
+		// Получаем список всех элементов корзины за последний месяц.
+		// Нам нужны только те элементы, которые добавили в корзину авторизованные пользователи
 		$rawBasket = \CSaleBasket::GetList([], [
-			'>DATE_UPDATE' => date('d.m.Y h:i:s', mktime(date("H"), date("i"), date("s"), date("n") - 1)),
+			'>DATE_UPDATE' => date('d.m.Y h:i:s', mktime(date("H"), date("i"), date("s"), date("n"), date('d') - 30)),
 			'!USER_ID'     => FALSE
 		]);
+
 		while ($arBasket = $rawBasket->Fetch())
 		{
+			// Запоминаем пользователей, у которых есть товары в корзине
 			$arBasketItems[$arBasket['USER_ID']][] = $arBasket;
+
 		}
+		unset($rawBasket);
 		$arNewBasketItems = [];
 		$arUserIDs = [];
 		foreach ($arBasketItems as $key => $arGroup)
 		{
-			$arNewBasketItems[$key] = self::CheckGoodsForOrders($arGroup);
+			$arNewBasketItems[$key] = self::CheckGoodsForOrders($arGroup);// Очищаем от "лишних"
 			if ($arNewBasketItems[$key])
 			{
-				$arUserIDs[] = $key;
+				$arUserIDs[] = $key; // Добавляем в массив ID пользователя, у которого что-либо еще осталось
 			} else
 			{
-				unset($arNewBasketItems[$key]);
+				unset($arNewBasketItems[$key]); // Удаляем пустые массивы
 			}
 
 		}
+		unset($arBasketItems);
+		// Получаем список пользователей
 		$rawUsers = UserTable::getList([
 			'filter' => [
 				'ID' => $arUserIDs
 			]
 		]);
 		$arUsers = $rawUsers->fetchAll();
-		unset($arBasketItems);
+
+
 //		d($arUsers);
-		foreach ($arNewBasketItems as $user => $arBasketGroup)
+		foreach ($arNewBasketItems as $user => $arBasketGroup)//Формируем и отправляем письма
 		{
 			$GoodsList = '<table><tr><td>Название</td><td>Стоимость</td></tr>';
 			foreach ($arBasketGroup as $arItem)
@@ -88,7 +95,6 @@ class Main
 				'EMAIL_TO'   => $arUsers[$user]['EMAIL'],
 				'ITEMS'      => $GoodsList
 			];
-			d($arFields);
 			lo($arFields);
 			\CEvent::Send('VAPNIK_SUBSCRIBE', 's1', $arFields);
 
